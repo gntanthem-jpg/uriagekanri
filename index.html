@@ -21,6 +21,10 @@
         button.submit-btn { padding: 12px; background: #007bff; color: white; border: none; border-radius: 4px; font-size: 16px; width: 100%; cursor: pointer; }
         .cat-list { margin-top: 5px; margin-bottom: 20px; padding-left: 20px; }
         .cat-list li { margin-bottom: 8px; }
+        /* 履歴一覧用のスタイル */
+        .history-item { border: 1px solid #ddd; padding: 10px; margin-bottom: 10px; border-radius: 4px; background: #fafafa; }
+        .history-item div { margin-bottom: 5px; }
+        .delete-btn { background: #dc3545; color: white; border: none; padding: 8px; border-radius: 4px; cursor: pointer; float: right; }
     </style>
 </head>
 <body>
@@ -33,6 +37,7 @@
             <button onclick="showSection('sales')" class="active" id="btn-sales">売上入力</button>
             <button onclick="showSection('costs')" id="btn-costs">原価入力</button>
             <button onclick="showSection('summary')" id="btn-summary">損益確認</button>
+            <button onclick="showSection('history')" id="btn-history">履歴・削除</button>
             <button onclick="showSection('categories')" id="btn-categories">カテゴリ</button>
         </div>
 
@@ -44,6 +49,7 @@
                 <div class="form-group"><label>カテゴリ</label><select id="sales-category"></select></div>
                 <div class="form-group"><label>金額 (円)</label><input type="number" id="sales-amount"></div>
                 <div class="form-group"><label>日付</label><input type="date" id="sales-date"></div>
+                <div class="form-group"><label>コメント</label><input type="text" id="sales-comment" placeholder="任意"></div>
                 <button class="submit-btn" onclick="saveData('sales')">登録</button>
             </div>
 
@@ -53,6 +59,7 @@
                 <div class="form-group"><label>カテゴリ</label><select id="costs-category"></select></div>
                 <div class="form-group"><label>金額 (円)</label><input type="number" id="costs-amount"></div>
                 <div class="form-group"><label>日付</label><input type="date" id="costs-date"></div>
+                <div class="form-group"><label>コメント</label><input type="text" id="costs-comment" placeholder="任意"></div>
                 <button class="submit-btn" onclick="saveData('costs')">登録</button>
             </div>
 
@@ -71,37 +78,47 @@
                 <p><strong>利益: <span id="profit-year">0</span> 円</strong></p>
             </div>
 
+            <!-- 履歴・削除 -->
+            <div id="history" class="section">
+                <h2>履歴一覧（削除）</h2>
+                <div class="form-group">
+                    <label>表示する月</label>
+                    <input type="month" id="history-month" onchange="renderHistory()">
+                </div>
+                <h3>売上履歴</h3>
+                <div id="history-sales-list"></div>
+                <hr>
+                <h3>原価履歴</h3>
+                <div id="history-costs-list"></div>
+            </div>
+
             <!-- カテゴリ登録 -->
             <div id="categories" class="section">
                 <h2>カテゴリ登録</h2>
                 <div class="form-group">
                     <label>区分</label>
-                    <select id="new-category-type">
-                        <option value="sales">売上</option>
-                        <option value="costs">原価</option>
-                    </select>
+                    <select id="new-category-type"><option value="sales">売上</option><option value="costs">原価</option></select>
                 </div>
                 <div class="form-group"><label>新しいカテゴリ名</label><input type="text" id="new-category"></div>
                 <button class="submit-btn" onclick="addCategory()">追加</button>
-                
-                <h3 style="margin-top:20px; font-size:16px;">売上カテゴリ一覧</h3>
+                <h3 style="margin-top:20px; font-size:16px;">売上カテゴリ</h3>
                 <ul id="sales-category-list" class="cat-list"></ul>
-                
-                <h3 style="margin-top:10px; font-size:16px;">原価カテゴリ一覧</h3>
+                <h3 style="margin-top:10px; font-size:16px;">原価カテゴリ</h3>
                 <ul id="cost-category-list" class="cat-list"></ul>
             </div>
         </div>
     </div>
 
     <script>
-        // ★重要：ステップ2で取得した新しいURLをここに貼ります
-        const GAS_URL = "https://script.google.com/macros/s/AKfycbwm3Civy-LZ8PJbZcONFAXbA0A64kWq2Z40BYx6bFoXFCfbj74ZAo86eLc9s1z0plED/exec"; 
+        // ★重要：ステップ1で取得した新しいURLをここに貼ります
+        const GAS_URL = "https://script.google.com/macros/s/AKfycbw5EBfnBV_IjWTGhc_rI8pZgCxFLWcqMhspYXYBABldG6udiKcf4oj_kXHprTJe8KFx/exec"; 
 
         let db = { salesCategories: [], costCategories: [], sales: [], costs: [] };
 
         document.getElementById('sales-date').valueAsDate = new Date();
         document.getElementById('costs-date').valueAsDate = new Date();
         document.getElementById('summary-month').value = new Date().toISOString().slice(0, 7);
+        document.getElementById('history-month').value = new Date().toISOString().slice(0, 7);
 
         async function fetchGAS(payload) {
             document.getElementById('loading').style.display = 'inline';
@@ -134,12 +151,12 @@
             document.getElementById(sectionId).classList.add('active');
             document.getElementById('btn-' + sectionId).classList.add('active');
             if (sectionId === 'summary') calculateSummary();
+            if (sectionId === 'history') renderHistory();
         }
 
         function updateCategoryDropdowns() {
             document.getElementById('sales-category').innerHTML = db.salesCategories.map(c => `<option value="${c}">${c}</option>`).join('');
             document.getElementById('costs-category').innerHTML = db.costCategories.map(c => `<option value="${c}">${c}</option>`).join('');
-            
             document.getElementById('sales-category-list').innerHTML = db.salesCategories.map(c => `<li>${c} <button onclick="deleteCategory('sales', '${c}')">削除</button></li>`).join('');
             document.getElementById('cost-category-list').innerHTML = db.costCategories.map(c => `<li>${c} <button onclick="deleteCategory('costs', '${c}')">削除</button></li>`).join('');
         }
@@ -160,11 +177,8 @@
         
         async function deleteCategory(type, name) {
             await fetchGAS({ action: 'deleteCategory', categoryType: type, categoryName: name });
-            if (type === 'sales') {
-                db.salesCategories = db.salesCategories.filter(c => c !== name);
-            } else {
-                db.costCategories = db.costCategories.filter(c => c !== name);
-            }
+            if (type === 'sales') db.salesCategories = db.salesCategories.filter(c => c !== name);
+            else db.costCategories = db.costCategories.filter(c => c !== name);
             updateCategoryDropdowns();
         }
 
@@ -172,17 +186,54 @@
             const category = document.getElementById(`${type}-category`).value;
             const amount = Number(document.getElementById(`${type}-amount`).value);
             const date = document.getElementById(`${type}-date`).value;
+            const comment = document.getElementById(`${type}-comment`).value; // コメント取得
+
             if (!amount || !date) return alert('金額と日付を入力してください');
 
             const actionName = type === 'sales' ? 'addSale' : 'addCost';
-            await fetchGAS({ action: actionName, category: category, amount: amount, date: date });
+            await fetchGAS({ action: actionName, category: category, amount: amount, date: date, comment: comment });
             
-            db[type].push({ category, amount, date });
+            db[type].push({ category, amount, date, comment });
             document.getElementById(`${type}-amount`).value = '';
+            document.getElementById(`${type}-comment`).value = '';
             alert('登録しました');
         }
 
-        // ★ここで原価を12で割る計算をしています
+        // データの削除処理
+        async function deleteRecord(type, date, category, amount) {
+            if (!confirm("このデータを削除しますか？")) return;
+            
+            await fetchGAS({ action: 'deleteRecord', recordType: type, date: date, category: category, amount: amount });
+            
+            // ローカルのデータからも削除（完全一致する最初の1件だけ消す）
+            const index = db[type].findIndex(item => item.date === date && item.category === category && item.amount === amount);
+            if (index > -1) db[type].splice(index, 1);
+            
+            renderHistory();
+            alert('削除しました');
+        }
+
+        // 履歴の表示処理
+        function renderHistory() {
+            const monthStr = document.getElementById('history-month').value;
+            
+            const renderList = (type, targetId) => {
+                const targetData = db[type].filter(item => item.date.startsWith(monthStr));
+                const html = targetData.map(item => `
+                    <div class="history-item">
+                        <button class="delete-btn" onclick="deleteRecord('${type}', '${item.date}', '${item.category}', ${item.amount})">削除</button>
+                        <div><strong>${item.date}</strong> [${item.category}]</div>
+                        <div>金額: ${item.amount.toLocaleString()} 円</div>
+                        ${item.comment ? `<div>メモ: ${item.comment}</div>` : ''}
+                    </div>
+                `).join('');
+                document.getElementById(targetId).innerHTML = html || '<p>データなし</p>';
+            };
+
+            renderList('sales', 'history-sales-list');
+            renderList('costs', 'history-costs-list');
+        }
+
         function calculateSummary() {
             const selectedMonthStr = document.getElementById('summary-month').value; 
             if (!selectedMonthStr) return;
@@ -203,7 +254,6 @@
                 if (item.date.startsWith(targetYear)) costsYear += item.amount;
             });
 
-            // 原価を12分割（小数点以下は四捨五入）
             const displayCostsMonth = Math.round(costsMonth / 12);
             const displayCostsYear = Math.round(costsYear / 12);
 
